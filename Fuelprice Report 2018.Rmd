@@ -1,0 +1,2098 @@
+---
+title: "Tankstellen und Kraftstoffpreise 2018"
+author: "Christopher Dahl"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+  pdf_document: default
+---
+
+## Hintergrund
+Seit Juni 2014 melden Tankstellen in Deutschland ihre aktuellen Kraftstoffpreise an die Markttransparenzstelle für Kraftstoffe (MTS-K), eine Abteilung des Bundeskartellamtes. Die rechtliche Verpflichtung zur Meldung der Preisinformationen bietet eine seltene Möglichkeit die Entwicklung von Preisen zeitnah flächendeckend zu analysieren.
+Datenquelle für die Kraftstoffpreise und Tankstellen Informationen ist Tankerkönig.
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages, sourcing, dbconnection, warning=FALSE, message=FALSE}
+  # packages
+  library(tidyverse)
+  library(ggthemes)
+  library(gridExtra)
+  library(tmap)
+  library(leaflet)
+  library(leaflet.extras)
+  library(rgdal)
+  library(DBI)
+  library(odbc)
+  
+  # themes
+  source(file = "code/functions/theme_base_FUN.R", echo = F, encoding = "UTF-8")
+  
+  # plot elements
+  colors = c("#FF8F00", "#5A8F29", "#3C7DC4", "#2B2B2B")
+  
+  # DB connection
+  dbcon <- dbConnect(odbc(), "fuelprice", timeout = 10, encoding = "windows-1252", bigint = "integer")
+```
+
+
+# Tankstellen
+Für die Übersicht der in Deutschland aktiven Tankstellen, wurden die Daten sämtlicher Tankstellen ausgewertet, welche im Beobachtungszeitraum (01.01. bis 31.12.) mindestens eine Preisinformation übermittelt haben.
+
+
+## nach Bundesländern
+Die räumliche Zuordnung der Tankstellen erfolgt auf Basis der im Datensatz enthalten Angaben zu Längen- und Breitengrad einzelner Tankstellen.
+
+```{r fuel stations by state, fig.width=10, fig.height=5, fig.align="center"}
+  # query active stations in year
+  year <- 2018
+  query_stations_year <- paste0("
+                    SELECT 
+                      distinct(stid)
+                    FROM 
+                      price
+                    WHERE 
+                      time BETWEEN '", year,"-01-01 00:00:01'
+                           AND '", year,"-12-31 23:59:59'
+                    GROUP BY
+                      stid;")
+
+  act_stations <- dbGetQuery(dbcon, query_stations_year) %>%
+    as_tibble()
+  
+  act_stations_string <- paste(act_stations$stid, collapse = ",")
+  
+  # Query stations data
+  query_states <- paste0("
+                    SELECT
+                      stations.bl_kz,
+                      stations.bl_name,
+                      count,
+                      area.area_bl,
+                      pop.pop_bl,
+                      round(count/area.area_bl,4) AS a_dens,
+                      round(count*1000/(pop.pop_bl),4) AS p_dens
+                    FROM 
+                      (SELECT
+                          bl_kz,
+                          bl_name,
+                          count(*) AS count 
+                       FROM
+                          stations
+                       WHERE
+                          bl_kz IS NOT NULL
+                       AND
+                          uuid = ANY('{",act_stations_string ,"}')
+                       GROUP BY bl_kz, bl_name) stations
+                    LEFT JOIN 
+                      (SELECT
+                          bl_kz,
+                          area_bl
+                       FROM 
+                          area_bl
+	                     WHERE
+	                        date = '2016-12-31') area
+                    ON
+                      stations.bl_kz = area.bl_kz
+                    LEFT JOIN
+                      (SELECT
+                          bl_kz,
+                          pop_bl
+                       FROM
+                          pop_bl
+	                     WHERE
+	                        date = '2018-12-31') pop
+                    ON
+                      stations.bl_kz = pop.bl_kz
+                    ORDER BY
+                      bl_kz ASC;")
+  
+  stations_states <- dbGetQuery(dbcon, query_states) %>% 
+    as_tibble() %>%
+    mutate(bl_name = factor(bl_name, bl_name))
+  
+  # plot number of stations by state
+  stations_states_plot <- ggplot(data = stations_states, aes(x = bl_name, y = count)) + 
+    geom_bar(stat = "identity",
+             show.legend = F,
+             width = 0.9,
+             fill = colors[3],
+             alpha = 1) +
+    #geom_text(aes(label = count), # add for printing actual numbers to bars
+    #          hjust = if_else(stations_states$count >= 0.7*max(stations_states$count), 1.2, -0.1), 
+    #          color = if_else(stations_states$count >= 0.7*max(stations_states$count), "white", "black"), 
+    #          position = position_dodge(0.9), size = 3.5) +
+    theme_base() +
+    labs(x = NULL, y = "Anzahl Tankstellen") + 
+    coord_flip()
+  
+  # plot number of stations per square kilometer by state
+  area_states_plot <- ggplot(data = stations_states, mapping = aes(x = bl_name, y = a_dens)) + 
+    geom_bar(stat = "identity",
+             show.legend = F,
+             width = 0.9,
+             fill = colors[1],
+             alpha = 1) +
+    #geom_text(aes(label = round(a_dens, 2)), # add for printing actual numbers to bars
+    #          hjust = if_else(stations_states$a_dens >= 0.7*max(stations_states$a_dens), 1.2, -0.1), 
+    #          color = "black",
+    #          position = position_dodge(0.9), size = 3.5) +
+    theme_base() +
+    labs(x = NULL, y = "... pro Quadratkilometer") + 
+    coord_flip() + 
+    scale_x_discrete(labels = rep("",dim(stations_states)[1]))
+  
+  # plot number of stations per population by state
+  pop_states_plot <- ggplot(data = stations_states, mapping = aes(x = bl_name, y = p_dens)) + 
+    geom_bar(stat = "identity",
+             show.legend = F,
+             width = 0.9,
+             fill = colors[2],
+             alpha = 1) +
+    #geom_text(aes(label = round(p_dens, 2)), # add for printing actual numbers to bars
+    #          hjust = if_else(stations_states$p_dens >= 0.7*max(stations_states$p_dens), 1.2, -0.1), 
+    #          color = if_else(stations_states$p_dens >= 0.7*max(stations_states$p_dens), "white", "black"), 
+    #          position = position_dodge(0.9), size = 3.5) +
+    theme_base() +
+    labs(x = NULL, y = "... pro 1.000 Einwohner") + 
+    coord_flip() +
+    scale_x_discrete(labels = rep("",dim(stations_states)[1]))
+  
+  # arrange plots
+  grid.arrange(stations_states_plot, area_states_plot, pop_states_plot,
+               ncol = 3,
+               widths = c(4.5,3,3))
+```
+
+
+## in den 7 größten Städten
+```{r fuel stations 7 largest cities, fig.width=10, fig.height=3, fig.align="center"}
+  # query data
+  query_city7 <- paste0("
+                    SELECT
+                      pop.kreis_kz,
+                      stations.kreis_name,
+                      count, 
+                      pop.pop_kreis,
+                      area.area_kreis,
+                      round(count/area.area_kreis, 4) AS a_dens,
+                      round(count*1000/pop.pop_kreis, 4) AS p_dens
+                    FROM 
+                      (SELECT
+                          kreis_kz,
+                          pop_kreis 
+                       FROM
+                          pop_kreis
+                       WHERE
+                          date = '2018-12-31'
+                       AND
+                          pop_kreis IS NOT NULL
+                      ORDER BY
+                          pop_kreis DESC
+                      LIMIT 7) pop
+                    LEFT JOIN
+                      (SELECT
+                          kreis_kz,
+                          kreis_name,
+                          count(*) AS count 
+                       FROM
+                          stations
+                       WHERE
+                          uuid = ANY('{",act_stations_string ,"}')
+                       GROUP BY
+                          kreis_kz,
+                          kreis_name) stations
+                    ON 
+                      pop.kreis_kz = stations.kreis_kz
+                    LEFT JOIN
+                      (SELECT
+                          kreis_kz,
+                          area_kreis 
+                      FROM
+                          area_kreis
+                      WHERE
+                          date = '2016-12-31') area
+                    ON
+                      pop.kreis_kz = area.kreis_kz
+                    ORDER BY
+                      pop.kreis_kz ASC;")
+
+  stations_city7 <- dbGetQuery(dbcon, query_city7) %>%
+    as_tibble() %>%
+    mutate(kreis_name = factor(kreis_name, kreis_name))
+  
+  # plot number of stations by city
+  stations_city7_plot <- ggplot(data = stations_city7, mapping = aes(x = kreis_name, y = count)) + 
+    geom_bar(stat = "identity",
+             show.legend = F,
+             width = 0.9,
+             fill = colors[3],
+             alpha = 1) +
+    #geom_text(aes(label = count), # add for printing actual numbers to bars
+    #          hjust = if_else(stations_city7$count >= 0.7*max(stations_city7$count), 1.2, -0.1), 
+    #          color = if_else(stations_city7$count >= 0.7*max(stations_city7$count), "white", "black"), 
+    #          position = position_dodge(0.9), size = 3.5) +
+    theme_base() +
+    labs(x = NULL, y = "Anzahl Tankstellen") + 
+    coord_flip()
+  
+  # plot number of stations per square kilometer by city
+  area_city7_plot <- ggplot(data = stations_city7, mapping = aes(x = kreis_name, y = a_dens)) + 
+    geom_bar(stat = "identity",
+             show.legend = F,
+             width = 0.9,
+             fill = colors[1],
+             alpha = 1) +
+    #geom_text(aes(label = round(a_dens, 2)), # add for printing actual numbers to bars
+    #          hjust = if_else(stations_city7$a_dens >= 0.7*max(stations_city7$a_dens), 1.2, -0.1), 
+    #          color = "black",
+    #          position = position_dodge(0.9), size = 3.5) +
+    theme_base() +
+    labs(x = NULL, y = "... pro Quadratkilometer") + 
+    coord_flip() + 
+    scale_x_discrete(labels = rep("",dim(stations_city7)[1]))
+  
+  # plot number of stations per population by city
+  pop_city7_plot <- ggplot(data = stations_city7, mapping = aes(x = kreis_name, y = p_dens)) + 
+    geom_bar(stat = "identity",
+             show.legend = F,
+             width = 0.9,
+             fill = colors[2],
+             alpha = 1) +
+    #geom_text(aes(label = round(p_dens, 2)), # add for printing actual numbers to bars
+    #          hjust = if_else(stations_city7$p_dens >= 0.7*max(stations_city7$p_dens), 1.2, -0.1), 
+    #          color = if_else(stations_city7$p_dens >= 0.7*max(stations_city7$p_dens), "white", "black"), 
+    #          position = position_dodge(0.9), size = 3.5) +
+    theme_base() +
+    labs(x = NULL, y = "... pro 1.000 Einwohner") + 
+    coord_flip() +
+    scale_x_discrete(labels = rep("",dim(stations_city7)[1]))
+  
+  # arrange plots
+  grid.arrange(stations_city7_plot, area_city7_plot, pop_city7_plot,
+               ncol = 3,
+               widths = c(4,3,3))
+```
+
+
+## nach Landkreisen
+```{r, fuel stations by county, fig.width=10, fig.height=10, fig.align="center", message=F}
+  # load map county map data
+  county_shp_in <- readOGR(dsn = "data/map2019/vg250_ebenen", 
+                           layer="VG250_KRS", encoding = "UTF-8",
+                           stringsAsFactors = F, verbose = F, use_iconv = T)
+  
+  # query county data
+  query_county <- paste0("
+                    SELECT
+                      stations.kreis_kz,
+                      stations.kreis_name,
+                      count,
+                      area.area_kreis,
+                      pop.pop_kreis,
+			                cars.kfz,
+			                cars.lkw,
+                      round(count/area.area_kreis, 4) AS a_dens, 
+                      round(count*1000/pop.pop_kreis, 4) AS p_dens,
+			                round(count*1000/cars.kfz::decimal, 4) AS kfz_dens,
+			                round(count*1000/cars.lkw::decimal, 4) AS lkw_dens
+                    FROM 
+                      (SELECT
+                          kreis_kz,
+                          kreis_name,
+                          count(*) AS count
+                       FROM
+                          stations_test
+                       WHERE
+                          kreis_kz IS NOT NULL
+                       AND
+                          uuid = ANY('{",act_stations_string ,"}')
+                       GROUP BY
+                          kreis_kz,
+                          kreis_name) stations
+                    LEFT JOIN
+                      (SELECT
+                          kreis_kz,
+                          area_kreis
+                       FROM
+                          area_kreis
+	                     WHERE
+	                        date = '2016-12-31') area
+                    ON
+                      stations.kreis_kz = area.kreis_kz
+                    LEFT JOIN
+                      (SELECT
+                          kreis_kz,
+                          pop_kreis
+                       FROM
+                          pop_kreis
+	                     WHERE
+	                        date = '2018-12-31') pop
+                    ON
+                      stations.kreis_kz = pop.kreis_kz
+                    LEFT JOIN
+                      (SELECT
+                          kreis_kz,
+                          kfz,
+                          lkw
+                       FROM
+                          car_numbers
+	                     WHERE
+	                        date = '", year, "-01-01') cars
+                    ON
+                      stations.kreis_kz = cars.kreis_kz
+                    ORDER BY
+			                kreis_kz ASC;")
+
+  stations_county <- dbGetQuery(dbcon, query_county) %>%
+    as_tibble()
+  
+  # join map data and queried data
+  county_shp <- county_shp_in
+  county_shp@data <- county_shp_in@data %>%
+    left_join(stations_county, by = c("AGS" = "kreis_kz"))
+  
+  # map number of stations
+  map_kreise_count <- tm_shape(shp = county_shp, name = "Anzahl Tankstellen") + 
+    tm_polygons("count",
+                style = "jenks",
+                palette = "Blues", n = 6, contrast = c(0.4, 0.95),
+                border.col = "white",
+                border.alpha = 0.5,
+                title = "",
+                id = "GEN",
+                legend.format = list(digits = 0),
+                showNA = F,
+                colorNA = "grey90",
+                popup.vars = c("Number stations:" = "count"),
+                popup.format = list(digits = 0)) +
+    tm_layout(title = "Anzahl Tankstellen",
+              title.size = 1.1,
+              title.position = c("center","top"),
+              inner.margins = c(0.05,0.10,0.10,0.10),
+              legend.position = c("left","bottom"),
+              frame  = F) +
+    tm_scale_bar(color.dark = "gray70",
+                 position = c("right","bottom"))
+  
+  # map number of station per square kilometer
+  map_kreise_area <- tm_shape(shp = county_shp, name = "Tankstellen pro Quadratkilometer") + 
+    tm_polygons("a_dens",
+                style = "jenks",
+                palette = "Oranges", n = 6, contrast = c(0.4, 0.95),
+                border.col = "white",
+                border.alpha = 0.5,
+                title = "",
+                id = "GEN",
+                legend.format = list(digits = 2),
+                showNA = F,
+                colorNA = "grey90",
+                popup.vars = c("Number stations:" = "a_dens"),
+                popup.format = list(digits = 2)) +
+    tm_layout(title = "Tankstellen pro Quadratkilometer",
+              title.size = 1.1,
+              title.position = c("center","top"),
+              inner.margins = c(0.05,0.10,0.10,0.10),
+              legend.position = c("left","bottom"),
+              frame  = F) +
+    tm_scale_bar(color.dark = "gray70",
+                 position = c("right","bottom"))
+  
+    # map number of stations per 1.000 population
+    map_kreise_pop <- tm_shape(shp = county_shp, name = "Tankstellen pro 1.000 Einwohner") + 
+    tm_polygons("p_dens",
+                style = "jenks",
+                palette = "Greens", n = 6, contrast = c(0.4, 0.95),
+                border.col = "white",
+                border.alpha = 0.5,
+                title = "",
+                id = "GEN",
+                legend.format = list(digits = 2),
+                showNA = F,
+                colorNA = "grey90",
+                popup.vars = c("Number stations:" = "p_dens"),
+                popup.format = list(digits = 2)) +
+    tm_layout(title = "Tankstellen pro 1.000 Einwohner",
+              title.size = 1.1,
+              title.position = c("center","top"),
+              inner.margins = c(0.05,0.10,0.10,0.10),
+              legend.position = c("left","bottom"),
+              frame  = F) +
+    tm_scale_bar(color.dark = "gray70",
+                 position = c("right","bottom"))
+  
+  # map number of stations per 1.000 cars
+  map_kreise_cars <- tm_shape(shp = county_shp, name = "Tankstellen pro 1.000 zugelassene PKW") + 
+    tm_polygons("kfz_dens",
+                style = "jenks",
+                palette = "PuRd", n = 6, contrast = c(0.4, 0.95),
+                border.col = "white",
+                border.alpha = 0.5,
+                title = "",
+                id = "GEN",
+                legend.format = list(digits = 2),
+                showNA = F,
+                colorNA = "grey90",
+                popup.vars = c("Number stations:" = "kfz_dens"),
+                popup.format = list(digits = 2)) +
+    tm_layout(title = "Tankstellen pro 1.000 zugelassene PKW",
+              title.size = 1.1,
+              title.position = c("center","top"),
+              inner.margins = c(0.05,0.10,0.10,0.10),
+              legend.position = c("left","bottom"),
+              frame  = F) +
+    tm_scale_bar(color.dark = "gray70",
+                 position = c("right","bottom"))
+  
+  # arrange maps
+  tmap_arrange(map_kreise_count, map_kreise_area, map_kreise_pop, map_kreise_cars,
+               ncol = 2, nrow = 2)
+```
+
+
+## nach Marken
+Die Marken der einzelnen Tankstellen sind im Datensatz von Tankerkönig nicht immer eindeutig benannt. Die Zuordnung der Tankstellen zu den jeweiligen Marken erfolgte daher mittels automatischer Textmustererkennung. Daher sind gewisse Fehlzuordnungen nicht auszuschließen. Ein stichprobenartiger Vergleich zeigt jedoch, dass die automatische Zuordnung nahe an der Realität liegt.
+
+```{r brands, fig.width=7, fig.height=5, fig.align="center"}
+  # query brands in dataset
+  query_brands <- paste0("
+                    SELECT
+                      distinct(brand_cat),
+                      count(*)
+                    FROM
+                      stations_test
+                    WHERE
+                      uuid = ANY('{",act_stations_string ,"}')
+                    GROUP BY
+                      brand_cat;")
+  
+  # tidy data, assign brand colors, calc shares
+  brands <- dbGetQuery(dbcon, query_brands) %>%
+    as_tibble() %>%
+    arrange(brand_cat) %>%
+    add_column(color = c("yellow","blue","blueviolet","orange",
+                         "lightblue","green","gold","deepskyblue",
+                         "darkblue","lightgreen","red","grey",
+                         "hotpink","white")) %>%
+    arrange(desc(count)) %>%
+    mutate(brand_cat = factor(brand_cat, brand_cat)) %>%
+    mutate(ypos = sum(count) - cumsum(count) + count - 0.5*count) %>%
+    mutate(share = count/sum(count)*100)
+  
+  # plot brand shares
+  ggplot(data = brands, mapping = aes(x = "", y = count, fill = brand_cat)) +
+      geom_bar(stat = "identity",
+               color = "black",
+               show.legend = T,
+               width = 1) +
+      labs(x = NULL, y = NULL) +
+      scale_fill_manual(values = brands$color, name = "", 
+                        labels = paste(brands$brand_cat, " - ", brands$count, " (", round(brands$share,0), "%)", sep = ""),
+                        guide = guide_legend(ncol = 1)) +
+      coord_polar(theta = "y", start = 0) + 
+      geom_text(aes(y = ypos, label = brand_cat, x = 1.75), 
+                check_overlap = T) + 
+      theme_base() +
+      theme(panel.grid.major.x = element_blank(),
+          axis.text = element_blank(),
+          legend.position = "right") 
+```
+
+```{r stations positons and brands, fig.width=7.5, fig.height=7.5, fig.align="center", eval=T}
+  # query stations, long, lat
+  query_stations_pos <- paste("SELECT brand_cat, longitude, latitude FROM stations_test
+                               WHERE uuid = ANY('{",act_stations_string ,"}')", sep = "")
+  
+  stations_pos <- dbGetQuery(dbcon, query_stations_pos) %>%
+    as_tibble() %>%
+    filter(longitude != 0, longitude < 20, latitude > 40)
+  
+  # map position of stations, colour by brand
+  map_stations_pos <- tm_shape(county_shp) +
+    tm_fill(col = "grey90")
+     
+  for(i in 1:length(brands$brand_cat)){ # transform geodata
+    temp_stations_pos <- stations_pos %>%
+      filter(brand_cat == brands$brand_cat[i])
+    
+    temp_pos_shp <- st_as_sf(temp_stations_pos, coords = c("longitude","latitude"), crs = 4979)
+    
+    map_stations_pos <- map_stations_pos + 
+      tm_shape(temp_pos_shp) +
+      tm_dots(col = brands$color[i],
+              border.lwd = NA,
+              scale = 1.3)
+  }
+  
+  map_stations_pos <- map_stations_pos + 
+    tm_add_legend(type = "symbol",
+                  labels = brands$brand_cat,
+                  col = brands$color) +
+    tm_layout(title = "",
+              title.position = c("center","top"),
+              inner.margins = c(0.05,0.10,0.10,0.10),
+              frame = F,
+              legend.position = c(0.85,0.1))
+  
+  map_stations_pos
+```
+
+
+# Preise
+Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemeldeten Preisänderungen. Jede gemeldete Preisänderung geht mit gleichem Gewicht in die Berechnung von Durchschnittspreisen ein. Es erfolgt keine keine Gewichtung nach Absatzmenge oder Zeit in der der gemeldete Preis aktiv war. Dies führt dazu, dass beispielsweise mehrere Meldungen von Preisänderungen auf vergleichsweise hohem Preisniveau in kurzen Zeitabständen die berechneten Durchschnittspreise nach oben verzerren. Gleiches gilt für häufige Preisänderungen auf vergleichsweise niedrigem Niveau. 
+
+
+## Regionale Preisverteilung nach Landkreisen
+```{r, fuel price by county and month, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+  # Query monthly price data by county
+  query_month_county <- paste0("
+                    SELECT 
+                      kreis_kz, 
+                  	  kreis_name,
+                  	  month,
+                  	  round(AVG(pe5),3) AS pe5, 
+                  	  round(AVG(pe10),3) AS pe10, 
+                  	  round(AVG(pdi),3) AS pdi, 
+                  	  count(*) AS anzahl 
+                    FROM
+                      ((SELECT 
+                  			  stid, 
+                  			  date_trunc('month', time) as month, 
+                  			  round(avg(pe5),3) AS pe5, 
+                  			  round(avg(pe10),3) AS pe10, 
+                  			  round(avg(pdi),3) AS pdi 
+                  		  FROM
+                  		    price
+                  		  WHERE
+                  		    time BETWEEN '", year, "-01-01 00:00:01' 
+                  		         AND '", year, "-12-31 23:59:59'
+                  		  GROUP BY
+                  		    stid, month) price
+                    INNER JOIN
+                      stations_test
+                    ON
+                      stations_test.uuid = price.stid)
+                    GROUP BY
+                      kreis_kz,
+                      kreis_name,
+                      month;")
+  
+  price_month_county <- dbGetQuery(dbcon, query_month_county) %>%
+    as_tibble()
+  
+  # calc breaks for map legend
+  breaks_price_month_county <- list(pe5 = seq(floor(min(price_month_county$pe5, na.rm = T)*100)/100, 
+                                                ceiling(max(price_month_county$pe5, na.rm = T)*100)/100, 
+                                                by = 0.01),
+                                      pe10 = seq(floor(min(price_month_county$pe10, na.rm = T)*100)/100, 
+                                                 ceiling(max(price_month_county$pe10, na.rm = T)*100)/100,
+                                                 by = 0.01),
+                                      pdi = seq(floor(min(price_month_county$pdi, na.rm = T)*100)/100,
+                                                ceiling(max(price_month_county$pdi, na.rm = T)*100)/100,
+                                                by = 0.01))
+  
+  # tidy data
+  price_month_county <- price_month_county %>%
+    pivot_wider(names_from = month, values_from = c(pe5, pe10, pdi, anzahl))
+    
+  # join with map data
+  price_month_county_shp <- county_shp_in
+  price_month_county_shp@data <- price_month_county_shp@data %>%
+      left_join(price_month_county, by = c("AGS" = "kreis_kz"))
+  
+  # map monthly prices by county - Super E5
+  map_price_month_county_pe5 <- tm_shape(shp = price_month_county_shp, name = "Monthly Super E5 Price") + 
+      tm_polygons(paste0("pe5_", seq(as.Date(paste0(year, "-01-01")), by = "month", length.out = 12)),
+                  style = "fixed",
+                  palette = "Blues", contrast = c(0.3, 1.0),
+                  breaks = breaks_price_month_county$pe5,
+                  border.col = "white",
+                  border.alpha = 0.5,
+                  title = "",
+                  id = "GEN",
+                  legend.show = F,
+                  showNA = F,
+                  colorNA = "grey90") +
+      tm_facets(nrow = 4) + 
+      tm_layout(title = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+                title.size = 1.7,
+                title.position = c("center","top"),
+                inner.margins = c(0.06,0.10,0.10,0.10),
+                frame  = F) 
+  
+  legend_map_pe5 <- tm_shape(shp = price_month_county_shp) + 
+    tm_fill(paste0("pe5_", year, "-01-01"),
+            style = "fixed",
+            palette = "Blues", contrast = c(0.3, 1.0),
+            breaks = breaks_price_month_county$pe5,
+            title = "Preis Super E5 in €",
+            legend.format = list(digits = 2)) +
+    tm_layout(legend.only = T,
+              legend.height = 6,
+              legend.width = 2,
+              asp = 0,
+              scale = 1.3)
+  
+  # map monthly prices by county - Super E10
+  map_price_month_county_pe10 <- tm_shape(shp = price_month_county_shp, name = "Monthly Super E10 Price") + 
+      tm_polygons(paste0("pe10_", seq(as.Date(paste0(year, "-01-01")), by = "month", length.out = 12)),
+                  style = "fixed",
+                  palette = "Oranges", contrast = c(0.3, 1.0),
+                  breaks = breaks_price_month_county$pe10,
+                  border.col = "white",
+                  border.alpha = 0.5,
+                  title = "",
+                  id = "GEN",
+                  legend.show = F,
+                  showNA = F,
+                  colorNA = "grey90") +
+      tm_facets(nrow = 4) + 
+      tm_layout(title = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+                title.size = 1.7,
+                title.position = c("center","top"),
+                inner.margins = c(0.06,0.10,0.10,0.10),
+                frame  = F) 
+  
+  legend_map_pe10 <- tm_shape(shp = price_month_county_shp) + 
+    tm_fill(paste0("pe10_", year, "-01-01"),
+            style = "fixed",
+            palette = "Oranges", contrast = c(0.3, 1.0),
+            breaks = breaks_price_month_county$pe10,
+            title = "Preis Super E10 in €",
+            legend.format = list(digits = 2)) +
+    tm_layout(legend.only = T,
+              legend.height = 6,
+              legend.width = 2,
+              asp = 0,
+              scale = 1.3)
+  
+  # map monthly prices by county - Diesel
+  map_price_month_county_pdi <- tm_shape(shp = price_month_county_shp, name = "Monthly Diesel Price") + 
+      tm_polygons(paste0("pdi_", seq(as.Date(paste0(year, "-01-01")), by = "month", length.out = 12)),
+                  style = "fixed",
+                  palette = "Greens", contrast = c(0.3, 1.0),
+                  breaks = breaks_price_month_county$pdi,
+                  border.col = "white",
+                  border.alpha = 0.5,
+                  title = "",
+                  id = "GEN",
+                  legend.show = F,
+                  showNA = F,
+                  colorNA = "grey90") +
+      tm_facets(nrow = 4) + 
+      tm_layout(title = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+                title.size = 1.7,
+                title.position = c("center","top"),
+                inner.margins = c(0.06,0.10,0.10,0.10),
+                frame  = F) 
+  
+  legend_map_pdi <- tm_shape(shp = price_month_county_shp) + 
+    tm_fill(paste0("pdi_", year, "-01-01"),
+            style = "fixed",
+            palette = "Greens", contrast = c(0.3, 1.0),
+            breaks = breaks_price_month_county$pdi,
+            title = "Preis Diesel in €",
+            legend.format = list(digits = 2)) +
+    tm_layout(legend.only = T,
+              legend.height = 6,
+              legend.width = 2,
+              asp = 0,
+              scale = 1.3)
+  
+  # box plots by months
+  query_percentiles_month_county <- paste0("
+                    SELECT 
+                      date_trunc('month', time) AS month,
+                      unnest(percentile_cont(ARRAY[0.05, 0.25, 0.5, 0.75, 0.95]) 
+                        within group (order by pe5)) AS pe5,
+                      unnest(percentile_cont(ARRAY[0.05, 0.25, 0.5, 0.75, 0.95]) 
+                        within group (order by pe10)) AS pe10,
+                      unnest(percentile_cont(ARRAY[0.05, 0.25, 0.5, 0.75, 0.95]) 
+                        within group (order by pdi)) AS pdi,
+                      unnest(ARRAY[0.05, 0.25, 0.5, 0.75, 0.95]) AS perc	
+                    FROM
+                      price
+                    WHERE
+                      time BETWEEN '", year, "-01-01 00:00:01' 
+                           AND '", year, "-12-31 23:59:59'
+                    GROUP BY
+                      month;")
+  
+  pricePercentilesMonthCounty <- dbGetQuery(dbcon, query_percentiles_month_county) %>%
+    as_tibble()
+    
+  # tidy data
+  pricePercentilesMonthCounty_plot <- pricePercentilesMonthCounty %>%
+    mutate(month = format(month, "%B")) %>%
+    pivot_wider(names_from = perc, values_from = c(pe5, pe10, pdi)) %>%
+    mutate(month = factor(month, month))
+  
+  # box plot super E5 by month
+  boxPlotSuperE5 <- ggplot(pricePercentilesMonthCounty_plot, aes(x = month)) +
+    geom_boxplot(
+      aes(ymin = pe5_0.05, lower = pe5_0.25, middle = pe5_0.5, upper = pe5_0.75, ymax = pe5_0.95),
+      stat = "identity",
+      fill = colors[3],
+      width = 0.8) +
+    theme_base() +
+    theme(panel.grid.major.x = element_blank(),
+          panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Preis Super E5 in Euro") +
+    scale_y_continuous(name = "Preis Super E5 in Euro",
+                       expand = expansion(add = 0.02))
+  
+  # box plot Super E10 by month
+  boxPlotSuperE10 <- ggplot(pricePercentilesMonthCounty_plot, aes(x = month)) +
+    geom_boxplot(
+      aes(ymin = pe10_0.05, lower = pe10_0.25, middle = pe10_0.5, upper = pe10_0.75, ymax = pe10_0.95),
+      stat = "identity",
+      fill = colors[1],
+      width = 0.8) +
+    theme_base() +
+    theme(panel.grid.major.x = element_blank(),
+          panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Preis Super E10 in Euro") +
+    scale_y_continuous(name = "Preis Super E10 in Euro",
+                       expand = expansion(add = 0.02))
+  
+  # box plot Super E10 by month
+  boxPlotDiesel <- ggplot(pricePercentilesMonthCounty_plot, aes(x = month)) +
+    geom_boxplot(
+      aes(ymin = pdi_0.05, lower = pdi_0.25, middle = pdi_0.5, upper = pdi_0.75, ymax = pdi_0.95),
+      stat = "identity",
+      fill = colors[2],
+      width = 0.8) +
+    theme_base() +
+    theme(panel.grid.major.x = element_blank(),
+          panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Preis Diesel in Euro") +
+    scale_y_continuous(name = "Preis Diesel in Euro",
+                       expand = expansion(add = 0.02))
+```
+
+### Super E5
+```{r, fuel price by county and month Super E5, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+  tmap_arrange(map_price_month_county_pe5, legend_map_pe5, ncol = 2, widths = c(0.85, 0.15))
+```
+
+```{r, fuel price box plot by month Super E5, fig.width=10, fig.height=3, fig.align="center", message=F, eval=T}
+  boxPlotSuperE5
+```
+Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
+
+
+### Super E10
+```{r, fuel price by county and month Super E10, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+  tmap_arrange(map_price_month_county_pe10, legend_map_pe10, ncol = 2, widths = c(0.85, 0.15))
+```
+
+```{r, fuel price box plot by month Super E10, fig.width=10, fig.height=3, fig.align="center", message=F, eval=T}
+  boxPlotSuperE10
+```
+Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
+
+
+### Diesel
+```{r, fuel price by county and month Diesel, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+  tmap_arrange(map_price_month_county_pdi, legend_map_pdi, ncol = 2, widths = c(0.85, 0.15))
+```
+
+```{r, fuel price box plot by month Diesel, fig.width=10, fig.height=3, fig.align="center", message=F, eval=T}
+  boxPlotDiesel
+```
+Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
+
+
+## Preisentwicklung
+```{r, price development daily, fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # query daily average price
+  query_price_day <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) AS day, 
+                      round(avg(pe5),3) AS e5,
+                      round(avg(pe10),3) AS e10,
+                      round(avg(pdi),3) AS diesel
+                    FROM
+                      price
+                    WHERE
+                      time BETWEEN '", year, "-01-01 00:00:01' 
+                           AND '", year, "-12-31 23:59:59'
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+
+  prices_day <- dbGetQuery(dbcon, query_price_day) %>%
+    as_tibble() %>%
+    mutate(day = as.Date(day))
+  
+  # load brent prices
+  brent_in <- read_delim(file = "data/brent.csv",
+                      delim = ";",
+                      locale = locale(decimal_mark = ","))
+  
+  brent <- brent_in %>%
+    mutate(Datum = as.Date(Datum, "%d.%m.%Y")) %>%
+    arrange(Datum) %>%
+    filter(Datum >= paste0(year, "-01-01")) %>%
+    filter(Datum <= paste0(year, "-12-31"))
+  
+  # adjustementfactor for second axis plot
+  adjFactorBrent <- mean(brent$Schluss) / mean(c(mean(prices_day$e5), mean(prices_day$e5))) 
+    
+  # plot daily prices fuel and oil
+  ggplot(prices_day, aes(x = day)) +
+    geom_line(data = brent, 
+              mapping = aes(x = Datum, y = Schluss / adjFactorBrent, colour = "Rohöl (Brent)"), 
+              size = 0.8,
+              alpha = 0.6) +
+    geom_line(aes(y = e5, colour = "Super E5"),
+              size = 1.2) +
+    geom_line(aes(y = e10, colour = "Super E10"),
+              size = 1.2) +
+    geom_line(aes(y = diesel, colour = "Diesel"),
+              size = 1.2) +
+    theme_base() +
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Kraftstoffpreis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8,
+                       sec.axis = sec_axis(~.*adjFactorBrent, name = "Rohölpreis (Brent) in Euro")) + 
+    scale_colour_manual("",
+                        values = c("Rohöl (Brent)" = colors[4], "Super E5" = colors[1], 
+                                   "Super E10" = colors[3], "Diesel" = colors[2]))
+```
+
+
+## Preisunterschiede: Super E5 im Vergleich zu Super E10 und Diesel
+```{r, price differences, fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # calc price differences Super E10 and Diesel to Super E5
+  prices_day_diff <- prices_day %>%
+    mutate(diff_e5_e10 = e10 - e5,
+           diff_e5_diesel = diesel - e5)
+  
+  # plot price differences
+  ggplot(prices_day_diff, aes(x = day)) +
+    geom_line(aes(y = diff_e5_e10, colour = "Super E10"),
+              size = 1.2) +
+    geom_line(aes(y = diff_e5_diesel, colour = "Diesel"),
+              size = 1.2) +
+    theme_base() +
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Preisdifferenz in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_colour_manual("Preisunterschied zu",
+                        values = c("Super E10" = colors[3], "Diesel" = colors[2])) + 
+    geom_hline(yintercept = 0, lty = 2, colour = "grey55")
+```
+
+
+## Disaggregierte Preisentwicklung: Super E5
+```{r, query prices by categories, fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # query stations, bl_kz, brand_cat, street_cat
+  query_stations_cat <- paste0("
+                    SELECT 
+                      uuid,
+                      bl_kz,
+                      kreis_kz,
+                      brand_cat,
+                      street_cat
+                    FROM
+                      stations_test
+                    WHERE
+                      uuid = ANY('{",act_stations_string ,"}');")
+
+  stations_cat <- dbGetQuery(dbcon, query_stations_cat) %>%
+    as_tibble()
+  
+  # query raumtyp
+  query_raumtyp <- paste0("
+                    SELECT
+                      krs17 as kreis_kz,
+                      slraum
+                    FROM
+                      bbsr_kreise_2017;")
+  
+  raumtyp <- dbGetQuery(dbcon, query_raumtyp) %>%
+    as_tibble() %>%
+    mutate(kreis_kz = str_sub(kreis_kz, 1, 5))
+  
+  # join stations with raumtyp
+  stations_cat <- stations_cat %>%
+    left_join(raumtyp)
+  
+  # create list with ID's for different groups
+  stations_cat_ids_full <- list(autobahn = stations_cat %>%
+                             filter(street_cat == "Autobahn"),
+                           autohof = stations_cat %>%
+                             filter(street_cat == "Autohof"),
+                           normal = stations_cat %>%
+                             filter(street_cat == "Sonstige"),
+                           aral = stations_cat %>%
+                             filter(brand_cat == "ARAL") %>%
+                             filter(street_cat == "Sonstige"),
+                           shell = stations_cat %>%
+                             filter(brand_cat == "Shell") %>%
+                             filter(street_cat == "Sonstige"),
+                           hem = stations_cat %>%
+                             filter(brand_cat == "HEM") %>%
+                             filter(street_cat == "Sonstige"),
+                           jet = stations_cat %>%
+                             filter(brand_cat == "JET") %>%
+                             filter(street_cat == "Sonstige"),
+                           north = stations_cat %>%
+                             filter(bl_kz == "01" | bl_kz == "02" |
+                                    bl_kz == "03" | bl_kz == "04") %>%
+                             filter(street_cat == "Sonstige"),
+                           east = stations_cat %>%
+                             filter(bl_kz == "11" | bl_kz == "12" |
+                                    bl_kz == "13" | bl_kz == "14" |
+                                    bl_kz == "15" | bl_kz == "16") %>%
+                             filter(street_cat == "Sonstige"),
+                           south = stations_cat %>%
+                             filter(bl_kz == "08" | bl_kz == "09") %>%
+                             filter(street_cat == "Sonstige"),
+                           west = stations_cat %>%
+                             filter(bl_kz == "05" | bl_kz == "06" |
+                                    bl_kz == "07" | bl_kz == "10") %>%
+                             filter(street_cat == "Sonstige"),
+                           city = stations_cat %>%
+                             filter(slraum == 1) %>%
+                             filter(street_cat == "Sonstige"),
+                           rural = stations_cat %>%
+                             filter(slraum == 2) %>%
+                             filter(street_cat == "Sonstige"))
+  
+  # collapse strings for query
+  stations_cat_ids <- list(autobahn = paste(stations_cat_ids_full$autobahn$uuid , collapse = ","),
+                           autohof = paste(stations_cat_ids_full$autohof$uuid, collapse = ","),
+                           normal = paste(stations_cat_ids_full$normal$uuid, collapse = ","),
+                           aral = paste(stations_cat_ids_full$aral$uuid, collapse = ","),
+                           shell = paste(stations_cat_ids_full$shell$uuid, collapse = ","),
+                           hem = paste(stations_cat_ids_full$hem$uuid, collapse = ","),
+                           jet = paste(stations_cat_ids_full$jet$uuid, collapse = ","),
+                           north = paste(stations_cat_ids_full$north$uuid, collapse = ","),
+                           east = paste(stations_cat_ids_full$east$uuid, collapse = ","),
+                           south = paste(stations_cat_ids_full$south$uuid, collapse = ","),
+                           west= paste(stations_cat_ids_full$west$uuid, collapse = ","),
+                           city = paste(stations_cat_ids_full$city$uuid, collapse = ","),
+                           rural = paste(stations_cat_ids_full$rural$uuid, collapse = ","))
+  
+  # query autobahn price
+  query_autobahn_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE 
+                      (stid = ANY('{",stations_cat_ids$autobahn ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59') 
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query autohof price
+  query_autohof_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$autohof ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01' 
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query 'normal' stations price (split due to memory constraints)
+  query_normal_price1 <- paste0("
+                    SELECT 
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$normal,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-06-30 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  query_normal_price2 <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$normal,"}'))
+                    AND
+                      (time BETWEEN '", year, "-07-01 00:00:01' 
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query aral price
+  query_aral_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$aral ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query shell price
+  query_shell_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$shell ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query hem price
+  query_hem_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$hem,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query jet price
+  query_jet_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$jet ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query north price
+  query_north_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$north ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01' 
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query east price
+  query_east_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$east ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query south price
+  query_south_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$south ,"}'))
+                    AND 
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query west price
+  query_west_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$west ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query city price
+  query_city_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$city ,"}'))
+                    AND 
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # query rural price
+  query_rural_price <- paste0("
+                    SELECT
+                      time_bucket('1 day', time::TIMESTAMP) as day, 
+                      round(avg(pe5),3) as e5,
+                      round(avg(pe10),3) as e10,
+                      round(avg(pdi),3) as diesel
+                    FROM
+                      price
+                    WHERE
+                      (stid = ANY('{",stations_cat_ids$rural ,"}'))
+                    AND
+                      (time BETWEEN '", year, "-01-01 00:00:01'
+                            AND '", year, "-12-31 23:59:59')
+                    GROUP BY
+                      day
+                    ORDER BY
+                      day ASC;")
+  
+  # run queries
+  autobahn_price <- dbGetQuery(dbcon, query_autobahn_price) %>%
+    as_tibble()
+  
+  autohof_price <- dbGetQuery(dbcon, query_autohof_price) %>%
+    as_tibble()
+  
+  normal_price1 <- dbGetQuery(dbcon, query_normal_price1) %>%
+    as_tibble()
+  
+  normal_price2 <- dbGetQuery(dbcon, query_normal_price2) %>%
+    as_tibble()
+  
+  normal_price <- normal_price1 %>%
+    bind_rows(normal_price2)
+  
+  aral_price <- dbGetQuery(dbcon, query_aral_price) %>%
+    as_tibble()
+  
+  shell_price <- dbGetQuery(dbcon, query_shell_price) %>%
+    as_tibble()
+  
+  hem_price <- dbGetQuery(dbcon, query_hem_price) %>%
+    as_tibble()
+  
+  jet_price <- dbGetQuery(dbcon, query_jet_price) %>%
+    as_tibble()
+  
+  north_price <- dbGetQuery(dbcon, query_north_price) %>%
+    as_tibble()
+  
+  east_price <- dbGetQuery(dbcon, query_east_price) %>%
+    as_tibble()
+  
+  south_price <- dbGetQuery(dbcon, query_south_price) %>%
+    as_tibble()
+  
+  west_price <- dbGetQuery(dbcon, query_west_price) %>%
+    as_tibble()
+  
+  city_price <- dbGetQuery(dbcon, query_city_price) %>%
+    as_tibble()
+  
+  rural_price <- dbGetQuery(dbcon, query_rural_price) %>%
+    as_tibble()
+```
+
+
+### nach Straßenart: Autobahn, Autohöfe and 'Normal'
+Die Zurordnung einzelner Tankstellen zu einer Straßenart erfolgt automatisch auf Basis der im Datensatz enthaltenen Angaben zu Straßennamen und Hausnummern. Hierbei kann es zu Fehlzuordnungen kommen, welche sich aber beim Vergleich mit anderen Quellen als gering erweisen.
+
+```{r, prices by street type plot , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+
+  # collect data
+  price_e5_street <- autobahn_price %>%
+    select(day, e5) %>%
+    rename(autobahn = e5) %>%
+    mutate(autohof = autohof_price$e5,
+           normal = normal_price$e5)
+
+  # plot prices by street type
+  ggplot(price_e5_street, aes(x = day)) +
+    geom_line(aes(y = autobahn, colour = "Autobahn"),
+              size = 1.2) +
+    geom_line(aes(y = autohof, colour = "Autohöfe"),
+              size = 1.2) +
+    geom_line(aes(y = normal, colour = "Normal"),
+              size = 1.2) +
+    theme_base() +
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) + 
+    scale_colour_manual("",
+                        values = c("Autobahn" = "blue", "Autohöfe" = "red", 
+                                   "Normal" = "green"))
+```
+
+
+### nach Regionen: Nord / Ost / Süd / West
+```{r, prices by regions plot , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # collect data
+  price_e5_regions<- north_price %>%
+    select(day, e5) %>%
+    rename(north = e5) %>%
+    mutate(east = east_price$e5,
+           south = south_price$e5,
+           west = west_price$e5)
+  
+  # plot data by regions
+  ggplot(price_e5_regions, aes(x = day)) +
+    geom_line(aes(y = north, colour = "Nord"),
+              size = 1.2) +
+    geom_line(aes(y = east, colour = "Ost"),
+              size = 1.2) +
+    geom_line(aes(y = south, colour = "Süd"),
+              size = 1.2) +
+    geom_line(aes(y = west, colour = "West"),
+              size = 1.2) +
+    theme_base() +
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) + 
+    scale_colour_manual("",
+                        values = c("Nord" = "blue", "Ost" = "red", 
+                                   "Süd" = "green", "West" = "gold"))
+```
+
+
+### nach Siedlungsdichte: Stadt vs. Land
+Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreisen erfolgt auf Basis der im Datensatz enthaltenen Angaben zu Längen- und Breitengrad der einzelnen Tankstellen. Die Einteilung der Landkreise beruht auf Daten des Bundesinstituts für Bau-, Stadt- und Raumforschung (BBSR).
+
+```{r, prices city vs. rural plot , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # collect data
+  price_e5_citrur<- city_price %>%
+    select(day, e5) %>%
+    rename(city = e5) %>%
+    mutate(rural = rural_price$e5)
+
+  # plot prices city vs. rural
+  ggplot(price_e5_citrur, aes(x = day)) +
+    geom_line(aes(y = city, colour = "Stadt"),
+              size = 1.2) +
+    geom_line(aes(y = rural, colour = "Land"),
+              size = 1.2) +
+    theme_base() +
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) + 
+    scale_colour_manual("",
+                        values = c("Stadt" = "blue", "Land" = "red"))
+```
+
+
+### nach Marken
+```{r, prices by brands plot , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # collect data
+  price_e5_brand <- aral_price %>%
+    select(day, e5) %>%
+    rename(aral = e5) %>%
+    mutate(shell = shell_price$e5,
+           hem = hem_price$e5,
+           jet = jet_price$e5)
+
+  # plot prices by selected brands
+  ggplot(price_e5_brand, aes(x = day)) +
+    geom_line(aes(y = aral, colour = "ARAL"),
+              size = 1.2) +
+    geom_line(aes(y = shell, colour = "Shell"),
+              size = 1.2) +
+    geom_line(aes(y = hem, colour = "HEM"),
+              size = 1.2) +
+    geom_line(aes(y = jet, colour = "JET"),
+              size = 1.2) +
+    theme_base() +
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) + 
+    scale_colour_manual("",
+                        values = c("ARAL" = "blue", "Shell" = "red", 
+                                   "HEM" = "green", "JET" = "gold"))
+```
+
+
+## Preiszyklen: Super E5
+```{r, price cycles , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # query average prices per 15 minutes
+  query_price_minute <- paste0("
+                    SELECT 
+                      EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg,
+                    	round(avg(pe5_median)::numeric, 3) AS median,
+                    	round(avg(pe5_p025)::numeric, 3) AS p025,
+                    	round(avg(pe5_p075)::numeric, 3) AS p075
+                    FROM (
+                    	SELECT
+                    	  time_bucket_gapfill('15 minute', time) AS dbtime,
+                    	  locf(round(avg(pe5), 3)) AS pe5_avg,
+                    	  percentile_cont(0.5) within group (order by pe5) AS pe5_median,
+                    	  percentile_cont(0.25) within group (order by pe5) AS pe5_p025,
+                    	  percentile_cont(0.75) within group (order by pe5) AS pe5_p075
+                      FROM 
+                        price
+                      WHERE 
+                        (time BETWEEN '", year, "-01-01 00:00:01' 
+                              AND '", year, "-12-31 23:59:59') 
+                      AND
+                        (pe5 IS NOT NULL)
+                      GROUP BY
+                        dbtime
+                      ORDER BY
+                        dbtime ASC) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute <- dbGetQuery(dbcon, query_price_minute) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute))
+  
+  # plot average prices 15 min interval
+  ggplot(price_minute, aes(x = time)) +
+    geom_line(aes(y = avg, colour = "Mittelwert"),
+              size = 1.2) + 
+    geom_line(aes(y = p025, colour = "25% Quantil"),
+              size = 1.2) + 
+    geom_line(aes(y = p075, colour = "75% Quantil"),
+              size = 1.2) + 
+    theme_base() + 
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_x_datetime("",
+                     date_breaks = "2 hours",
+                     date_labels = "%H:%M") +
+    scale_colour_manual("",
+                        values = c("Mittelwert" = colors[1], "25% Quantil" = colors[3], "75% Quantil" = colors[3]))
+```
+
+
+### Stadt / Land / Autobahn
+```{r, price cycles by street and area , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # autobahn price cycle
+  query_price_minute_autobahn <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM 
+                    	  price
+                    	WHERE 
+                    	  (stid = ANY('{",stations_cat_ids$autobahn , "}')) 
+                  	  AND	
+                    		(time BETWEEN '", year, "-01-01 00:00:01'
+                    		      AND '", year, "-12-31 23:59:59')
+            		      AND
+                    		(pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_autobahn <- dbGetQuery(dbcon, query_price_minute_autobahn) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>% 
+    select(-c(hour, minute)) %>%
+    rename(autobahn = avg)
+  
+  # city price cycle
+  query_price_minute_city <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM 
+                    	  price
+                    	WHERE 
+                    	  (stid = ANY('{",stations_cat_ids$city , "}')) 
+                  	  AND	
+                			  (time BETWEEN '", year, "-01-01 00:00:01'
+                			        AND '", year, "-12-31 23:59:59') 
+        			        AND
+                			  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_city <- dbGetQuery(dbcon, query_price_minute_city) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(city = avg)
+  
+  # rural price cycle
+  query_price_minute_rural <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM 
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$rural , "}')) 
+                  	  AND	
+                    		(time BETWEEN '", year, "-01-01 00:00:01' 
+                    		      AND '", year, "-12-31 23:59:59') 
+                  		AND
+                			  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY 
+                      HOUR,
+                      MINUTE
+                    ORDER BY 
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_rural <- dbGetQuery(dbcon, query_price_minute_rural) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(rural = avg)
+  
+  # join data
+  price_minute_street <- price_minute_autobahn %>%
+    left_join(price_minute_city, by = "time") %>%
+    left_join(price_minute_rural, by = "time") 
+  
+  # plot price cycles autobahn / city / rural
+  ggplot(price_minute_street, aes(x = time)) +
+    geom_line(aes(y = autobahn, colour = "Autobahn"),
+              size = 1.2) + 
+    geom_line(aes(y = city, colour = "Stadt"),
+              size = 1.2) + 
+    geom_line(aes(y = rural, colour = "Land"),
+              size = 1.2) + 
+    theme_base() + 
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_x_datetime("",
+                     date_breaks = "2 hours",
+                     date_labels = "%H:%M") +
+    scale_colour_manual("",
+                        values = c("Autobahn" = "blue", "Stadt" = "red", "Land" = "green"))
+```
+
+
+### nach Regionen: Nord / Ost / Süd / West
+```{r, price cycles by region , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # north price cycle
+  query_price_minute_north <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM 
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$north , "}')) 
+                  	  AND	
+                			  (time BETWEEN '", year, "-01-01 00:00:01'
+                			        AND '", year, "-12-31 23:59:59')
+        			        AND
+                			  (pe5 IS NOT NULL)
+                    	GROUP BY
+                  	    dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY 
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_north <- dbGetQuery(dbcon, query_price_minute_north) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(north = avg)
+  
+  # east price cycle
+  query_price_minute_east <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$east , "}')) 
+                  	  AND	
+                			  (time BETWEEN '", year, "-01-01 00:00:01' 
+              			          AND '", year, "-12-31 23:59:59') 
+              			  AND
+                			  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+
+  price_minute_east <- dbGetQuery(dbcon, query_price_minute_east) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(east = avg)
+  
+  # south price cycle
+  query_price_minute_south <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$south , "}')) 
+                  	  AND	
+                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                	            AND '", year, "-12-31 23:59:59') 
+        	            AND
+                			  (pe5 IS NOT NULL)
+                    	GROUP BY
+                  	    dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_south <- dbGetQuery(dbcon, query_price_minute_south) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(south = avg)
+  
+  # west price cycle
+  query_price_minute_west <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                  	    price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$west , "}')) 
+                  	  AND	
+                			  (time BETWEEN '", year, "-01-01 00:00:01'
+            			            AND '", year, "-12-31 23:59:59') 
+              			  AND
+                			  (pe5 IS NOT NULL)
+                    	GROUP BY 
+                    	  dbtime
+                    	ORDER BY 
+                    	  dbtime) price15min
+                    GROUP BY  
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_west <- dbGetQuery(dbcon, query_price_minute_west) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(west = avg)
+  
+  # join data
+  price_minute_region <- price_minute_north %>%
+    left_join(price_minute_east, by = "time") %>%
+    left_join(price_minute_south, by = "time") %>%
+    left_join(price_minute_west, by = "time") 
+  
+  # plot region price cycles
+  ggplot(price_minute_region, aes(x = time)) +
+    geom_line(aes(y = north, colour = "Nord"),
+              size = 1.2) + 
+    geom_line(aes(y = east, colour = "Ost"),
+              size = 1.2) + 
+    geom_line(aes(y = south, colour = "Süd"),
+              size = 1.2) +
+    geom_line(aes(y = west, colour = "West"),
+              size = 1.2) + 
+    theme_base() + 
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_x_datetime("",
+                     date_breaks = "2 hours",
+                     date_labels = "%H:%M") +
+    scale_colour_manual("",
+                        values = c("Nord" = "blue", "Ost" = "red", 
+                                   "Süd" = "green", "West" = "gold"))
+```
+
+
+### nach Marken
+```{r, price cycles by brands , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # aral price cycle
+  query_price_minute_aral <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$aral , "}')) 
+                	    AND	
+                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	        AND '", year, "-12-31 23:59:59')
+            	        AND
+                    	  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+
+  price_minute_aral <- dbGetQuery(dbcon, query_price_minute_aral) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(aral = avg)
+  
+  # shell price cycle
+  query_price_minute_shell <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$shell , "}')) 
+                	    AND	
+                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	        AND '", year, "-12-31 23:59:59')
+            	        AND
+                    	  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+
+  price_minute_shell <- dbGetQuery(dbcon, query_price_minute_shell) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(shell = avg)
+  
+  # jet price cycle
+  query_price_minute_jet <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$jet , "}')) 
+                	    AND	
+                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	        AND '", year, "-12-31 23:59:59')
+            	        AND
+                    	  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_jet <- dbGetQuery(dbcon, query_price_minute_jet) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(jet = avg)
+  
+  # hem price cycle
+  query_price_minute_hem <- paste0("
+                    SELECT 
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    		time_bucket_gapfill('15 minute', time) AS dbtime,
+                    		locf(round(avg(pe5), 3)) AS pe5_avg
+                    	FROM
+                    	  price
+                    	WHERE
+                    	  (stid = ANY('{",stations_cat_ids$hem , "}')) 
+                	    AND	
+                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	        AND '", year, "-12-31 23:59:59')
+            	        AND
+                    	  (pe5 IS NOT NULL)
+                    	GROUP BY
+                    	  dbtime
+                    	ORDER BY
+                    	  dbtime) price15min
+                    GROUP BY
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      HOUR,
+                      MINUTE;")
+  
+  price_minute_hem <- dbGetQuery(dbcon, query_price_minute_hem) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    select(-c(hour, minute)) %>%
+    rename(hem = avg)
+  
+  # join data
+  price_minute_brands <- price_minute_aral %>%
+    left_join(price_minute_shell, by = "time") %>%
+    left_join(price_minute_jet, by = "time") %>%
+    left_join(price_minute_hem, by = "time") 
+  
+  
+  # plot price cycles brands
+  ggplot(price_minute_brands, aes(x = time)) +
+    geom_line(aes(y = aral, colour = "ARAL"),
+              size = 1.2) + 
+    geom_line(aes(y = shell, colour = "Shell"),
+              size = 1.2) + 
+    geom_line(aes(y = jet, colour = "JET"),
+              size = 1.2) +
+    geom_line(aes(y = hem, colour = "HEM"),
+              size = 1.2) + 
+    theme_base() + 
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_x_datetime("",
+                     date_breaks = "2 hours",
+                     date_labels = "%H:%M") +
+    scale_colour_manual("",
+                        values = c("ARAL" = "blue", "Shell" = "red", 
+                                   "HEM" = "green", "JET" = "gold"),
+                        guide = guide_legend(nrow = 1))
+```
+
+
+### nach Monaten
+Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die folgenden Daten zu Preiszyklen für eine bessere Vergleichbarkeit um den jeweiligen monatlichen Mittelwert bereinigt.
+
+```{r, price cycles by month , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # query price cycles by month
+  query_price_minute_month <- paste0("
+                    SELECT 
+                      EXTRACT(MONTH FROM dbtime) AS month,
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	EXTRACT(MINUTE FROM dbtime) AS minute,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    	  time_bucket_gapfill('15 minute', time) AS dbtime,
+                    	  locf(round(avg(pe5), 3)) AS pe5_avg
+                      FROM
+                        price
+                      WHERE
+                        (time BETWEEN '", year, "-01-01 00:00:01'
+                              AND '", year, "-12-31 23:59:59')
+                      AND
+                    	   (pe5 IS NOT NULL)
+                      GROUP BY
+                        dbtime
+                      ORDER BY
+                        dbtime ASC) price15min
+                    GROUP BY
+                      MONTH,
+                      HOUR,
+                      MINUTE
+                    ORDER BY
+                      MONTH,
+                      HOUR,
+                      MINUTE;")
+
+  price_minute_month <- dbGetQuery(dbcon, query_price_minute_month) %>%
+    as_tibble() %>%
+    # replace extracted HH:mm by datetime
+    mutate(time = rep(seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96), 12)) %>%
+    select(-c(hour, minute)) %>%
+    group_by(month) %>%
+    mutate(avg = avg - mean(avg))
+  
+  # plot price cycles by month
+  ggplot(price_minute_month, aes(x = time)) + 
+    geom_line(aes(y = avg, colour = as.factor(month)),
+              size = 1.2) +
+    theme_base() + 
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_x_datetime("",
+                     date_breaks = "2 hours",
+                     date_labels = "%H:%M") +
+    scale_colour_viridis_d(name = "",
+                           labels = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"))
+```
+
+
+### nach Monaten und Wochentagen
+```{r, price cycles by month and weekday , fig.width=10, fig.height=5, fig.align="center", message=F, eval=T}
+  # query price cycles by day of the week and month
+  query_price_minute_monthday <- paste0("
+                    SELECT 
+                      EXTRACT(MONTH FROM dbtime) AS month,
+                    	EXTRACT(ISODOW FROM dbtime) AS day,
+                    	EXTRACT(HOUR FROM dbtime) AS hour,
+                    	round(avg(pe5_avg)::numeric, 3) AS avg
+                    FROM (
+                    	SELECT
+                    	  time_bucket_gapfill('1 hour', time) AS dbtime,
+                    	  locf(round(avg(pe5), 3)) AS pe5_avg
+                      FROM price
+                      WHERE (time BETWEEN '", year, "-01-01 00:00:01' AND '", year, "-12-31 23:59:59') AND
+                    		    (pe5 IS NOT NULL)
+                      GROUP BY dbtime
+                      ORDER BY dbtime ASC) price1day
+                    GROUP BY MONTH, DAY, HOUR
+                    ORDER BY MONTH, DAY, HOUR;")
+
+  price_minute_monthday_db <- dbGetQuery(dbcon, query_price_minute_monthday) %>%
+    as_tibble() 
+  
+  price_minute_monthday <- price_minute_monthday_db %>%
+    # replace extracted dd:hh by datetime
+    mutate(time = rep(seq(ISOdatetime(year,1,1,0,0,0), by = "1 hour", length.out = 24*7), 12)) %>%
+    select(-c(day, hour)) %>%
+    # remove monthly mean
+    group_by(month) %>%
+    mutate(avg = avg - mean(avg))
+  
+  # plot price cycle day of the week
+  ggplot(price_minute_monthday, aes(x = time)) + 
+    geom_line(aes(y = avg, colour = as.factor(month)),
+              size = 1.2) +
+    theme_base() + 
+    theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
+    labs(x = NULL, y = "Super E5 Preis in Euro") +
+    scale_y_continuous(expand = expansion(add = 0.02),
+                       n.breaks = 8) +
+    scale_x_datetime("",
+                     date_breaks = "1 day",
+                     date_labels = "%A") +
+    scale_colour_viridis_d(name = "",
+                           labels = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+                           guide = guide_legend(nrow = 2, byrow = T))
+```
+
+
+## Datenquellen
+* Tankstellen- und Preisinformationen: [Tankerkönig](https://creativecommons.tankerkoenig.de/)
+Kartendaten: [© GeoBasis-DE / BKG (2019)](https://gdz.bkg.bund.de/index.php/default/digitale-geodaten/verwaltungsgebiete.html?___store=default)
+* Gebietsfläche Bundesländer und Landkreise: Statistisches Bundesamt (Destatis). [Genesis-Tabelle 11111-0001 und 11111-0002](https://www-genesis.destatis.de/genesis/online?operation=statistic&levelindex=0&levelid=1590163091153&code=11111)
+* Einwohner Bundesländer und Landkreise: Statistisches Bundesamt (Destatis). [Genesis-Tabelle 12411-0010 und 12411-0015](https://www-genesis.destatis.de/genesis/online?operation=statistic&levelindex=0&levelid=1590163091153&code=12411)
+* Zugelassene PKW Landkreise: Statistisches Bundesamt (Destatis). [Genesis-Tabelle 46251-0006](https://www-genesis.destatis.de/genesis/online?operation=statistic&levelindex=0&levelid=1590163236361&code=46251)
+* Landkreistypen: Bundesinstitut für Bau-, Stadt- und Raumforschung [Referenz Kreise/Kreisregionen zu Kreistypen, Gebietsstand 31.12.2017](https://www.bbsr.bund.de/BBSR/DE/Raumbeobachtung/Raumabgrenzungen/deutschland/kreise/Kreistypen4/download-ref-kreistypen-xls.html)
+* Rohölpreise (Brent): [Finanzen.net](https://www.finanzen.net/rohstoffe/oelpreis/historisch)

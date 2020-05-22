@@ -1,0 +1,12 @@
+# Update data and figures
+print(paste(Sys.time(), "Start: update_fuelprice.R at"))
+path <- file.path("C:", "Users", "Chris", "Documents", "Data Projects", "fuelprice")
+setwd(path)
+source("code/new_stations_to_db.R", echo = F, encoding = "UTF-8", local = T)
+source("code/new_prices_to_db.R", echo = F, encoding = "UTF-8", local = T)
+source("code/analytics_packages.R", echo = F, encoding = "UTF-8", local = T)
+source("code/analytics_map30days.R", echo = F, encoding = "UTF-8", local = T)
+source("code/analytics_timeseries.R", echo = F, encoding = "UTF-8", local = T)
+source("code/analytics_branddifferences.R", echo = F, encoding = "UTF-8", local = T)
+source("code/analytics_stationsmap.R", echo = F, encoding = "UTF-8", local = T)
+print(paste(Sys.time(), "End: update_fuelprice.R at"))

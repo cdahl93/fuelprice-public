@@ -1,0 +1,11 @@
+ALTER TABLE stations ADD COLUMN geom geometry(POINT,4326);
+
+UPDATE stations SET geom = ST_SetSRID(ST_MakePoint(longitude,latitude),4326);
+
+54.659250000000		9.925332000000
+
+54.657238000000		9.946128000000
+
+SELECT * FROM stations
+WHERE ST_DWithin(geom, 'SRID=4326;POINT(9.925332 54.65925)'::geography, 2000);
+
