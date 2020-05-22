@@ -15,7 +15,3 @@ The dataset grows daily by about 600,000 price changes, hence over the years ove
 ## To-Do
 * Structural analysis of regional price differences
 * Combine fuel price data with traffic data
-
-# Clone
-To clone this repository use: https://chris:TOKEN@gitea.dahldata.com/chris/fuelprice.git
-
