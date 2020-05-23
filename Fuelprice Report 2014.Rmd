@@ -1,5 +1,5 @@
 ---
-title: "Tankstellen und Kraftstoffpreise 2015"
+title: "Tankstellen und Kraftstoffpreise 2014"
 author: "Christopher Dahl"
 date: "`r Sys.Date()`"
 output:
@@ -40,7 +40,7 @@ Datenquelle für die Kraftstoffpreise und Tankstellen Informationen ist Tankerk�
 
 
 # Tankstellen
-Für die Übersicht der in Deutschland aktiven Tankstellen, wurden die Daten sämtlicher Tankstellen ausgewertet, welche im Beobachtungszeitraum (01.01. bis 31.12.) mindestens eine Preisinformation übermittelt haben.
+Für die Übersicht der in Deutschland aktiven Tankstellen, wurden die Daten sämtlicher Tankstellen ausgewertet, welche im Beobachtungszeitraum (01.07. bis 31.12.) mindestens eine Preisinformation übermittelt haben.
 
 
 ## nach Bundesländern
@@ -48,14 +48,14 @@ Die räumliche Zuordnung der Tankstellen erfolgt auf Basis der im Datensatz enth
 
 ```{r fuel stations by state, fig.width=10, fig.height=5, fig.align="center"}
   # query active stations in year
-  year <- 2015
+  year <- 2014
   query_stations_year <- paste0("
                     SELECT 
                       distinct(stid)
                     FROM 
                       price
                     WHERE 
-                      time BETWEEN '", year,"-01-01 00:00:01'
+                      time BETWEEN '", year,"-07-01 00:00:01'
                            AND '", year,"-12-31 23:59:59'
                     GROUP BY
                       stid;")
@@ -567,7 +567,7 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
                   		  FROM
                   		    price
                   		  WHERE
-                  		    time BETWEEN '", year, "-01-01 00:00:01' 
+                  		    time BETWEEN '", year, "-07-01 00:00:01' 
                   		         AND '", year, "-12-31 23:59:59'
                   		  GROUP BY
                   		    stid, month) price
@@ -605,7 +605,7 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
   
   # map monthly prices by county - Super E5
   map_price_month_county_pe5 <- tm_shape(shp = price_month_county_shp, name = "Monthly Super E5 Price") + 
-      tm_polygons(paste0("pe5_", seq(as.Date(paste0(year, "-01-01")), by = "month", length.out = 12)),
+      tm_polygons(paste0("pe5_", seq(as.Date(paste0(year, "-07-01")), by = "month", length.out = 6)),
                   style = "fixed",
                   palette = "Blues", contrast = c(0.3, 1.0),
                   breaks = breaks_price_month_county$pe5,
@@ -616,15 +616,15 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
                   legend.show = F,
                   showNA = F,
                   colorNA = "grey90") +
-      tm_facets(nrow = 4) + 
-      tm_layout(title = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+      tm_facets(nrow = 2) + 
+      tm_layout(title = format(seq(ISOdate(2000,7,1), by = "month", length.out = 6), "%B"),
                 title.size = 1.7,
                 title.position = c("center","top"),
                 inner.margins = c(0.06,0.10,0.10,0.10),
                 frame  = F) 
   
   legend_map_pe5 <- tm_shape(shp = price_month_county_shp) + 
-    tm_fill(paste0("pe5_", year, "-01-01"),
+    tm_fill(paste0("pe5_", year, "-07-01"),
             style = "fixed",
             palette = "Blues", contrast = c(0.3, 1.0),
             breaks = breaks_price_month_county$pe5,
@@ -638,7 +638,7 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
   
   # map monthly prices by county - Super E10
   map_price_month_county_pe10 <- tm_shape(shp = price_month_county_shp, name = "Monthly Super E10 Price") + 
-      tm_polygons(paste0("pe10_", seq(as.Date(paste0(year, "-01-01")), by = "month", length.out = 12)),
+      tm_polygons(paste0("pe10_", seq(as.Date(paste0(year, "-07-01")), by = "month", length.out = 6)),
                   style = "fixed",
                   palette = "Oranges", contrast = c(0.3, 1.0),
                   breaks = breaks_price_month_county$pe10,
@@ -649,15 +649,15 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
                   legend.show = F,
                   showNA = F,
                   colorNA = "grey90") +
-      tm_facets(nrow = 4) + 
-      tm_layout(title = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+      tm_facets(nrow = 2) + 
+      tm_layout(title = format(seq(ISOdate(2000,7,1), by = "month", length.out = 6), "%B"),
                 title.size = 1.7,
                 title.position = c("center","top"),
                 inner.margins = c(0.06,0.10,0.10,0.10),
                 frame  = F) 
   
   legend_map_pe10 <- tm_shape(shp = price_month_county_shp) + 
-    tm_fill(paste0("pe10_", year, "-01-01"),
+    tm_fill(paste0("pe10_", year, "-07-01"),
             style = "fixed",
             palette = "Oranges", contrast = c(0.3, 1.0),
             breaks = breaks_price_month_county$pe10,
@@ -671,7 +671,7 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
   
   # map monthly prices by county - Diesel
   map_price_month_county_pdi <- tm_shape(shp = price_month_county_shp, name = "Monthly Diesel Price") + 
-      tm_polygons(paste0("pdi_", seq(as.Date(paste0(year, "-01-01")), by = "month", length.out = 12)),
+      tm_polygons(paste0("pdi_", seq(as.Date(paste0(year, "-07-01")), by = "month", length.out = 6)),
                   style = "fixed",
                   palette = "Greens", contrast = c(0.3, 1.0),
                   breaks = breaks_price_month_county$pdi,
@@ -682,15 +682,15 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
                   legend.show = F,
                   showNA = F,
                   colorNA = "grey90") +
-      tm_facets(nrow = 4) + 
-      tm_layout(title = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+      tm_facets(nrow = 2) + 
+      tm_layout(title = format(seq(ISOdate(2000,7,1), by = "month", length.out = 6), "%B"),
                 title.size = 1.7,
                 title.position = c("center","top"),
                 inner.margins = c(0.06,0.10,0.10,0.10),
                 frame  = F) 
   
   legend_map_pdi <- tm_shape(shp = price_month_county_shp) + 
-    tm_fill(paste0("pdi_", year, "-01-01"),
+    tm_fill(paste0("pdi_", year, "-07-01"),
             style = "fixed",
             palette = "Greens", contrast = c(0.3, 1.0),
             breaks = breaks_price_month_county$pdi,
@@ -716,7 +716,7 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
                     FROM
                       price
                     WHERE
-                      time BETWEEN '", year, "-01-01 00:00:01' 
+                      time BETWEEN '", year, "-07-01 00:00:01' 
                            AND '", year, "-12-31 23:59:59'
                     GROUP BY
                       month;")
@@ -774,7 +774,7 @@ Die dargestellten Preisinformationen beruhen auf den von den Tankstellen gemelde
 ```
 
 ### Super E5
-```{r, fuel price by county and month Super E5, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+```{r, fuel price by county and month Super E5, fig.width=10, fig.height=7.5, fig.align="center", message=F, eval=T}
   tmap_arrange(map_price_month_county_pe5, legend_map_pe5, ncol = 2, widths = c(0.85, 0.15))
 ```
 
@@ -785,7 +785,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
 
 
 ### Super E10
-```{r, fuel price by county and month Super E10, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+```{r, fuel price by county and month Super E10, fig.width=10, fig.height=7.5, fig.align="center", message=F, eval=T}
   tmap_arrange(map_price_month_county_pe10, legend_map_pe10, ncol = 2, widths = c(0.85, 0.15))
 ```
 
@@ -796,7 +796,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
 
 
 ### Diesel
-```{r, fuel price by county and month Diesel, fig.width=10, fig.height=15, fig.align="center", message=F, eval=T}
+```{r, fuel price by county and month Diesel, fig.width=10, fig.height=7.5, fig.align="center", message=F, eval=T}
   tmap_arrange(map_price_month_county_pdi, legend_map_pdi, ncol = 2, widths = c(0.85, 0.15))
 ```
 
@@ -818,7 +818,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     FROM
                       price
                     WHERE
-                      time BETWEEN '", year, "-01-01 00:00:01' 
+                      time BETWEEN '", year, "-07-01 00:00:01' 
                            AND '", year, "-12-31 23:59:59'
                     GROUP BY
                       day
@@ -837,7 +837,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
   brent <- brent_in %>%
     mutate(Datum = as.Date(Datum, "%d.%m.%Y")) %>%
     arrange(Datum) %>%
-    filter(Datum >= paste0(year, "-01-01")) %>%
+    filter(Datum >= paste0(year, "-07-01")) %>%
     filter(Datum <= paste0(year, "-12-31"))
   
   # adjustementfactor for second axis plot
@@ -994,7 +994,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE 
                       (stid = ANY('{",stations_cat_ids$autobahn ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59') 
                     GROUP BY
                       day
@@ -1013,15 +1013,15 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$autohof ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01' 
+                      (time BETWEEN '", year, "-07-01 00:00:01' 
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
                     ORDER BY
                       day ASC;")
   
-  # query 'normal' stations price (split due to memory constraints)
-  query_normal_price1 <- paste0("
+  # query 'normal' stations price
+  query_normal_price <- paste0("
                     SELECT 
                       time_bucket('1 day', time::TIMESTAMP) as day, 
                       round(avg(pe5),3) as e5,
@@ -1032,25 +1032,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$normal,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
-                            AND '", year, "-06-30 23:59:59')
-                    GROUP BY
-                      day
-                    ORDER BY
-                      day ASC;")
-  
-  query_normal_price2 <- paste0("
-                    SELECT
-                      time_bucket('1 day', time::TIMESTAMP) as day, 
-                      round(avg(pe5),3) as e5,
-                      round(avg(pe10),3) as e10,
-                      round(avg(pdi),3) as diesel
-                    FROM
-                      price
-                    WHERE
-                      (stid = ANY('{",stations_cat_ids$normal,"}'))
-                    AND
-                      (time BETWEEN '", year, "-07-01 00:00:01' 
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1069,7 +1051,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$aral ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1088,7 +1070,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$shell ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1107,7 +1089,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$hem,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1126,7 +1108,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$jet ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1145,7 +1127,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$north ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01' 
+                      (time BETWEEN '", year, "-07-01 00:00:01' 
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1164,7 +1146,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$east ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1183,7 +1165,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$south ,"}'))
                     AND 
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1202,7 +1184,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$west ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1221,7 +1203,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$city ,"}'))
                     AND 
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1240,7 +1222,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                     WHERE
                       (stid = ANY('{",stations_cat_ids$rural ,"}'))
                     AND
-                      (time BETWEEN '", year, "-01-01 00:00:01'
+                      (time BETWEEN '", year, "-07-01 00:00:01'
                             AND '", year, "-12-31 23:59:59')
                     GROUP BY
                       day
@@ -1254,14 +1236,8 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
   autohof_price <- dbGetQuery(dbcon, query_autohof_price) %>%
     as_tibble()
   
-  normal_price1 <- dbGetQuery(dbcon, query_normal_price1) %>%
+  normal_price <- dbGetQuery(dbcon, query_normal_price) %>%
     as_tibble()
-  
-  normal_price2 <- dbGetQuery(dbcon, query_normal_price2) %>%
-    as_tibble()
-  
-  normal_price <- normal_price1 %>%
-    bind_rows(normal_price2)
   
   aral_price <- dbGetQuery(dbcon, query_aral_price) %>%
     as_tibble()
@@ -1435,7 +1411,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                       FROM 
                         price
                       WHERE 
-                        (time BETWEEN '", year, "-01-01 00:00:01' 
+                        (time BETWEEN '", year, "-07-01 00:00:01' 
                               AND '", year, "-12-31 23:59:59') 
                       AND
                         (pe5 IS NOT NULL)
@@ -1453,7 +1429,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute <- dbGetQuery(dbcon, query_price_minute) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute))
   
   # plot average prices 15 min interval
@@ -1496,7 +1472,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE 
                     	  (stid = ANY('{",stations_cat_ids$autobahn , "}')) 
                   	  AND	
-                    		(time BETWEEN '", year, "-01-01 00:00:01'
+                    		(time BETWEEN '", year, "-07-01 00:00:01'
                     		      AND '", year, "-12-31 23:59:59')
             		      AND
                     		(pe5 IS NOT NULL)
@@ -1514,7 +1490,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_autobahn <- dbGetQuery(dbcon, query_price_minute_autobahn) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>% 
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>% 
     select(-c(hour, minute)) %>%
     rename(autobahn = avg)
   
@@ -1533,7 +1509,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE 
                     	  (stid = ANY('{",stations_cat_ids$city , "}')) 
                   	  AND	
-                			  (time BETWEEN '", year, "-01-01 00:00:01'
+                			  (time BETWEEN '", year, "-07-01 00:00:01'
                 			        AND '", year, "-12-31 23:59:59') 
         			        AND
                 			  (pe5 IS NOT NULL)
@@ -1551,7 +1527,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_city <- dbGetQuery(dbcon, query_price_minute_city) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(city = avg)
   
@@ -1570,7 +1546,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$rural , "}')) 
                   	  AND	
-                    		(time BETWEEN '", year, "-01-01 00:00:01' 
+                    		(time BETWEEN '", year, "-07-01 00:00:01' 
                     		      AND '", year, "-12-31 23:59:59') 
                   		AND
                 			  (pe5 IS NOT NULL)
@@ -1588,7 +1564,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_rural <- dbGetQuery(dbcon, query_price_minute_rural) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(rural = avg)
   
@@ -1635,7 +1611,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$north , "}')) 
                   	  AND	
-                			  (time BETWEEN '", year, "-01-01 00:00:01'
+                			  (time BETWEEN '", year, "-07-01 00:00:01'
                 			        AND '", year, "-12-31 23:59:59')
         			        AND
                 			  (pe5 IS NOT NULL)
@@ -1653,7 +1629,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_north <- dbGetQuery(dbcon, query_price_minute_north) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(north = avg)
   
@@ -1672,7 +1648,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$east , "}')) 
                   	  AND	
-                			  (time BETWEEN '", year, "-01-01 00:00:01' 
+                			  (time BETWEEN '", year, "-07-01 00:00:01' 
               			          AND '", year, "-12-31 23:59:59') 
               			  AND
                 			  (pe5 IS NOT NULL)
@@ -1690,7 +1666,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_east <- dbGetQuery(dbcon, query_price_minute_east) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(east = avg)
   
@@ -1709,7 +1685,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$south , "}')) 
                   	  AND	
-                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	  (time BETWEEN '", year, "-07-01 00:00:01'
                 	            AND '", year, "-12-31 23:59:59') 
         	            AND
                 			  (pe5 IS NOT NULL)
@@ -1727,7 +1703,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_south <- dbGetQuery(dbcon, query_price_minute_south) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(south = avg)
   
@@ -1746,7 +1722,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$west , "}')) 
                   	  AND	
-                			  (time BETWEEN '", year, "-01-01 00:00:01'
+                			  (time BETWEEN '", year, "-07-01 00:00:01'
             			            AND '", year, "-12-31 23:59:59') 
               			  AND
                 			  (pe5 IS NOT NULL)
@@ -1764,7 +1740,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_west <- dbGetQuery(dbcon, query_price_minute_west) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(west = avg)
   
@@ -1815,7 +1791,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$aral , "}')) 
                 	    AND	
-                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	  (time BETWEEN '", year, "-07-01 00:00:01'
                     	        AND '", year, "-12-31 23:59:59')
             	        AND
                     	  (pe5 IS NOT NULL)
@@ -1833,7 +1809,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_aral <- dbGetQuery(dbcon, query_price_minute_aral) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(aral = avg)
   
@@ -1852,7 +1828,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$shell , "}')) 
                 	    AND	
-                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	  (time BETWEEN '", year, "-07-01 00:00:01'
                     	        AND '", year, "-12-31 23:59:59')
             	        AND
                     	  (pe5 IS NOT NULL)
@@ -1870,7 +1846,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_shell <- dbGetQuery(dbcon, query_price_minute_shell) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(shell = avg)
   
@@ -1889,7 +1865,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$jet , "}')) 
                 	    AND	
-                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	  (time BETWEEN '", year, "-07-01 00:00:01'
                     	        AND '", year, "-12-31 23:59:59')
             	        AND
                     	  (pe5 IS NOT NULL)
@@ -1907,7 +1883,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_jet <- dbGetQuery(dbcon, query_price_minute_jet) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(jet = avg)
   
@@ -1926,7 +1902,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                     	WHERE
                     	  (stid = ANY('{",stations_cat_ids$hem , "}')) 
                 	    AND	
-                    	  (time BETWEEN '", year, "-01-01 00:00:01'
+                    	  (time BETWEEN '", year, "-07-01 00:00:01'
                     	        AND '", year, "-12-31 23:59:59')
             	        AND
                     	  (pe5 IS NOT NULL)
@@ -1944,7 +1920,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
   price_minute_hem <- dbGetQuery(dbcon, query_price_minute_hem) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96)) %>%
+    mutate(time = seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96)) %>%
     select(-c(hour, minute)) %>%
     rename(hem = avg)
   
@@ -1998,7 +1974,7 @@ Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die 
                       FROM
                         price
                       WHERE
-                        (time BETWEEN '", year, "-01-01 00:00:01'
+                        (time BETWEEN '", year, "-07-01 00:00:01'
                               AND '", year, "-12-31 23:59:59')
                       AND
                     	   (pe5 IS NOT NULL)
@@ -2018,7 +1994,7 @@ Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die 
   price_minute_month <- dbGetQuery(dbcon, query_price_minute_month) %>%
     as_tibble() %>%
     # replace extracted HH:mm by datetime
-    mutate(time = rep(seq(ISOdatetime(year,1,1,0,0,0), by = "15 min", length.out = 96), 12)) %>%
+    mutate(time = rep(seq(ISOdatetime(year,7,1,0,0,0), by = "15 min", length.out = 96), 6)) %>%
     select(-c(hour, minute)) %>%
     group_by(month) %>%
     mutate(avg = avg - mean(avg))
@@ -2036,7 +2012,7 @@ Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die 
                      date_breaks = "2 hours",
                      date_labels = "%H:%M") +
     scale_colour_viridis_d(name = "",
-                           labels = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"))
+                           labels = format(seq(ISOdate(2000,7,1), by = "month", length.out = 6), "%B"))
 ```
 
 
@@ -2054,7 +2030,7 @@ Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die 
                     	  time_bucket_gapfill('1 hour', time) AS dbtime,
                     	  locf(round(avg(pe5), 3)) AS pe5_avg
                       FROM price
-                      WHERE (time BETWEEN '", year, "-01-01 00:00:01' AND '", year, "-12-31 23:59:59') AND
+                      WHERE (time BETWEEN '", year, "-07-01 00:00:01' AND '", year, "-12-31 23:59:59') AND
                     		    (pe5 IS NOT NULL)
                       GROUP BY dbtime
                       ORDER BY dbtime ASC) price1day
@@ -2066,7 +2042,7 @@ Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die 
   
   price_minute_monthday <- price_minute_monthday_db %>%
     # replace extracted dd:hh by datetime
-    mutate(time = rep(seq(ISOdatetime(year,1,1,0,0,0), by = "1 hour", length.out = 24*7), 12)) %>%
+    mutate(time = rep(seq(ISOdatetime(year,7,1,0,0,0), by = "1 hour", length.out = 24*7), 6)) %>%
     select(-c(day, hour)) %>%
     # remove monthly mean
     group_by(month) %>%
@@ -2085,7 +2061,7 @@ Aufgrund der unterschiedlichen Preisniveaus in den einzelnen Monaten wurden die 
                      date_breaks = "1 day",
                      date_labels = "%A") +
     scale_colour_viridis_d(name = "",
-                           labels = format(seq(ISOdate(2000,1,1), by = "month", length.out = 12), "%B"),
+                           labels = format(seq(ISOdate(2000,7,1), by = "month", length.out = 6), "%B"),
                            guide = guide_legend(nrow = 2, byrow = T))
 ```
 

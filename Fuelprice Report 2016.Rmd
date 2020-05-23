@@ -862,8 +862,8 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
                        n.breaks = 8,
                        sec.axis = sec_axis(~.*adjFactorBrent, name = "Rohölpreis (Brent) in Euro")) + 
     scale_colour_manual("",
-                        values = c("Rohöl (Brent)" = colors[4], "Super E5" = colors[1], 
-                                   "Super E10" = colors[3], "Diesel" = colors[2]))
+                        values = c("Rohöl (Brent)" = colors[4], "Super E5" = colors[3], 
+                                   "Super E10" = colors[1], "Diesel" = colors[2]))
 ```
 
 
@@ -886,7 +886,7 @@ Anmerkung: Dargestellt sind Median sowie 5%, 25%, 75% und 95% Quantile.
     scale_y_continuous(expand = expansion(add = 0.02),
                        n.breaks = 8) +
     scale_colour_manual("Preisunterschied zu",
-                        values = c("Super E10" = colors[3], "Diesel" = colors[2])) + 
+                        values = c("Super E10" = colors[1], "Diesel" = colors[2])) + 
     geom_hline(yintercept = 0, lty = 2, colour = "grey55")
 ```
 
@@ -1461,9 +1461,11 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
     geom_line(aes(y = avg, colour = "Mittelwert"),
               size = 1.2) + 
     geom_line(aes(y = p025, colour = "25% Quantil"),
-              size = 1.2) + 
+              size = 1.2,
+              alpha = 0.75) + 
     geom_line(aes(y = p075, colour = "75% Quantil"),
-              size = 1.2) + 
+              size = 1.2,
+              alpha = 0.75) + 
     theme_base() + 
     theme(panel.grid.major.y = element_line(linetype = 2, colour = "grey55")) +
     labs(x = NULL, y = "Super E5 Preis in Euro") +
@@ -1473,7 +1475,7 @@ Die Zuordnung der Tankstellen zu städtisch oder ländlich geprägten Landkreise
                      date_breaks = "2 hours",
                      date_labels = "%H:%M") +
     scale_colour_manual("",
-                        values = c("Mittelwert" = colors[1], "25% Quantil" = colors[3], "75% Quantil" = colors[3]))
+                        values = c("Mittelwert" = colors[3], "25% Quantil" = colors[1], "75% Quantil" = colors[1]))
 ```
 
 
